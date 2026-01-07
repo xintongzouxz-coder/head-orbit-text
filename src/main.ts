@@ -164,34 +164,63 @@ function enqueueTokens(text: string) {
   const tokens = tokenizeGrapheme(text);
   const now = performance.now();
 
- for (const t of tokens) {
-  const i = particles.length;
-  const lane = Math.floor(i / ORBIT.laneCapacity);
+  for (const t of tokens) {
+    const i = particles.length;
+    const lane = Math.floor(i / ORBIT.laneCapacity);
 
-  // ✅ 当字多了以后，更多字进入“盖脸层”
-  const density = Math.min(1, particles.length / 120); // 0..1
-  const toVeil = Math.random() < (0.15 + 0.75 * density); // 早期少，后期多
+    // --- 1) 始终生成 1 个 orbit（保证 3D 环绕存在）---
+    const idxInLane = i % ORBIT.laneCapacity;
+    const theta0 =
+      (idxInLane / ORBIT.laneCapacity) * Math.PI * 2 +
+      (Math.random() - 0.5) * 0.08;
 
-  const idxInLane = i % ORBIT.laneCapacity;
-  const theta0 =
-    (idxInLane / ORBIT.laneCapacity) * Math.PI * 2 +
-    (Math.random() - 0.5) * 0.08;
+    particles.push({
+      id: nextId++,
+      token: t,
+      kind: "orbit",
+      u: 0,
+      biasY: 0,
+      vx: 0,
+      vy: 0,
+      theta: theta0,
+      lane,
+      radiusOffset: 0,
+      omegaOffset: 0,
+      omegaBase: 0.9,
+      bornAt: now,
+    });
 
-  particles.push({
-  id: nextId++,
-  token: t,
-  kind: toVeil ? "veil" : "orbit",
-  u: Math.pow(Math.random(), 0.65),
-  biasY: toVeil ? (-0.85 + Math.random() * 0.35) : 0,
-  theta: theta0,
-  lane,
-  radiusOffset: 0,
-  omegaOffset: 0,
-  omegaBase: 0.9,
-  bornAt: now,
-});
-}
+    // --- 2) 额外生成多个 veil（盖脸雾层）---
+    // 字越多，veil 越多：让遮挡快速上来
+    const density = Math.min(1, particles.length / 120);
+    const veilCopies = 2 + Math.floor(6 * density); // 2..8
 
+    for (let k = 0; k < veilCopies; k++) {
+      // 椭圆内部均匀采样
+      const r = Math.sqrt(Math.random());
+      const ang = Math.random() * Math.PI * 2;
+      const vx = r * Math.cos(ang);
+      const vy = r * Math.sin(ang);
+
+      particles.push({
+        id: nextId++,
+        token: t,
+        kind: "veil",
+        u: Math.pow(Math.random(), 0.55),
+        biasY: -0.65 + Math.random() * 0.35, // 偏上：更像挡视线
+        vx,
+        vy,
+        theta: Math.random() * Math.PI * 2, // veil 自己也有 theta（用于轻微动态）
+        lane: 0,
+        radiusOffset: 0,
+        omegaOffset: 0,
+        omegaBase: 0.15, // veil 慢慢漂
+        bornAt: now,
+      });
+    }
+  }
+
+  // cap
   if (particles.length > ORBIT.maxParticles) {
     particles.splice(0, particles.length - ORBIT.maxParticles);
   }
@@ -323,7 +352,8 @@ const baseR = faceWidthPx * 0.55;
 // ✅ 先算 headRx/headRy（后面 drawable 要用）
 const headRx = faceWidthPx * 0.55;
 const headRy = faceHeightPx * 0.62;
-
+const veilRx = headRx * 1.15;  // ✅ 放大 15%
+const veilRy = headRy * 1.35;  // ✅ 放大 35%，优先遮住眼睛方向
 const drawable = particles.map((p) => {
   let x = headX;
   let y = headY;
@@ -336,11 +366,11 @@ const drawable = particles.map((p) => {
     y = headY + b * Math.sin(p.theta);
   } else {
     // ✅ veil：直接用内部采样点铺满椭圆
-const a = headRx * (0.15 + 0.95 * p.u); // 稍微别太靠中心
-const b = headRy * (0.15 + 0.95 * p.u);
+const a = veilRx * (0.15 + 0.95 * p.u);
+const b = veilRy * (0.15 + 0.95 * p.u);
 
 x = headX + a * p.vx;
-y = headY + b * p.vy + (p.biasY * headRy * 0.25);
+y = headY + b * p.vy + (p.biasY * veilRy * 0.25);
   }
 
   const depth = Math.sin(p.theta);
@@ -406,11 +436,13 @@ ctx.restore();
 // ========== 2) 再画 FRONT：depth >= 0，正常画在头前 ==========
 for (const d of drawable) {
   const isVeil = d.p.kind === "veil";
-  if (!isVeil && d.depth < 0) continue; // ✅ orbit 只画前半圈；veil 全都画
+  if (!isVeil && d.depth < 0) continue; // orbit 只画前半圈，veil 全画
 
   const t = (d.depth + 1) / 2;
-  const scale = 0.75 + 0.55 * t;
-  const alpha = 0.15 + 0.85 * t;
+
+  const scale = isVeil ? (1.00 + 0.15 * t) : (0.75 + 0.55 * t);
+  const alpha = isVeil ? (0.65 + 0.30 * (1 - d.p.u)) : (0.15 + 0.85 * t);
+  // 说明：veil 越靠中心(u小)越不透明 -> 更像“挡视线”
 
   ctx.save();
   ctx.globalAlpha = alpha;
