@@ -8,10 +8,14 @@
   <body>
     <video id="cam" autoplay playsinline muted></video>
     <canvas id="fx"></canvas>
-
-    <button id="gear" aria-label="Settings" title="Settings">
+    <div class="topActions">
+       <button id="clear" class="clearTop" data-tip="Clear up" aria-label="Clear all text">✕</button>
+    <button id="gear" data-tip="Settings" aria-label="Settings" title="Settings">
       ⚙︎
     </button>
+    </div>
+   
+    
 
     <div id="panel" class="panel panel--hidden" role="dialog" aria-label="Settings panel">
       <div class="panel__row">
@@ -27,16 +31,17 @@
       <input id="speed" type="range" min="0.10" max="2.00" step="0.05" value="0.90" />
     </div>
 
-    <div class="inputWrap">
-      <input
-        id="thought"
-        class="thoughtInput"
-        type="text"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="Type what’s on your mind…"
-      />
-    </div>
+   <div class="thoughtBar">
+  <input
+    id="thought"
+    class="thoughtInput"
+    type="text"
+    autocomplete="off"
+    spellcheck="false"
+    placeholder="Type what's on your mind..."
+  />
+
+</div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

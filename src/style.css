@@ -29,9 +29,6 @@ html, body {
 
 /* Settings gear */
 #gear {
-  position: fixed;
-  top: 16px;
-  right: 16px;
   width: 40px;
   height: 40px;
   border: 0;
@@ -109,3 +106,127 @@ html, body {
 .thoughtInput::placeholder {
   color: rgba(255,255,255,0.55);
 }
+
+.thoughtBar{
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 24px;
+  display: flex;
+  gap: 12px;
+  z-index: 9999; /* 关键：盖过 canvas/video */
+  width: min(720px, calc(100vw - 48px));
+  pointer-events: auto;
+}
+
+.thoughtInput{
+  flex: 1;
+}
+
+.clearBtn{
+  flex: 0 0 auto;
+}
+.thoughtBar{
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+}
+
+.thoughtInput{
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255,255,255,0.92);
+  font-size: 18px;
+  line-height: 1.2;
+  padding: 6px 4px;
+}
+
+.thoughtInput::placeholder{
+  color: rgba(255,255,255,0.55);
+}
+
+.clearBtn{
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.9);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.clearBtn:hover{
+  background: rgba(255,255,255,0.18);
+}
+.clearTop{
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+
+  background: rgba(0,0,0,0.06);              /* 透明弱底 */
+  border: 1px solid rgba(60,60,60,0.55);      /* ✅ 深灰边框 */
+  color: rgba(60,60,60,0.95);                 /* ✅ 深灰 × */
+
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.clearTop:hover{
+  background: rgba(0,0,0,0.10);
+}
+
+.topActions{
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  align-items: center; /* ✅ 强制水平对齐 */
+  gap: 12px;
+  z-index: 9999;
+}
+/* 通用：有 data-tip 的按钮都显示统一 tooltip */
+.topActions [data-tip]{
+  position: relative;
+}
+
+.topActions [data-tip]::after{
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 10px);      /* ✅ 在下方 */
+  transform: translateX(-50%);
+  white-space: nowrap;
+
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+
+  background: rgba(50,50,50,0.75);
+  color: rgba(255,255,255,0.92);
+
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.topActions [data-tip]:hover::after{
+  opacity: 1;
+}
+/* 让 gear 和 clear 同尺寸、同居中 */
+#gear, .clearTop{
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+/* 如果 gear 的字体太小，可以加这一行（可选） */
+#gear { font-size: 18px; }
