@@ -1,3 +1,11 @@
+let headMaskPts: { x: number; y: number }[] | null = null;
+
+const FACE_OVAL = [
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323,
+  361, 288, 397, 365, 379, 378, 400, 377, 152, 148,
+  176, 149, 150, 136, 172, 58, 132, 93, 234, 127,
+  162, 21, 54, 103, 67, 109,
+];
 import { FilesetResolver, FaceLandmarker, HandLandmarker } from "@mediapipe/tasks-vision";
 import "./style.css";
 
@@ -326,6 +334,43 @@ function mapNormToScreen(nx: number, ny: number) {
   return { x, y };
 }
 
+function buildHeadMaskPath(
+  lm: { x: number; y: number }[],
+  headX: number,
+  headY: number,
+  faceWidthPx: number,
+  faceHeightPx: number
+) {
+  // 让遮罩比“脸”更像“头”（包含头发）
+  const inflateX = 1.18;              // 宽一点
+  const inflateY = 1.45;              // 高很多（包含头发）
+  const hairLift = -faceHeightPx * 0.10; // 整体再往上提一点点
+
+  // 用脸中心当作“局部坐标系原点”
+  const center = getFaceCenter(lm);
+  const c = mapNormToScreen(center.x, center.y);
+
+  const path = new Path2D();
+
+  for (let i = 0; i < FACE_OVAL.length; i++) {
+    const idx = FACE_OVAL[i];
+    const p = mapNormToScreen(lm[idx].x, lm[idx].y);
+
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+
+    // 把 face-oval 点围绕 headX/headY 重新“放大”成头的轮廓
+    const x = headX + dx * inflateX;
+    const y = headY + dy * inflateY + hairLift;
+
+    if (i === 0) path.moveTo(x, y);
+    else path.lineTo(x, y);
+  }
+
+  path.closePath();
+  return path;
+}
+
 // --- Canvas resize ---
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -407,6 +452,12 @@ headY = headY + (targetY - headY) * smooth;
 
   faceWidthPx  = Math.max(160, Math.min(460, faceWidthPx));
   faceHeightPx = Math.max(200, Math.min(520, faceHeightPx));
+}
+
+let headMaskPath: Path2D | null = null;
+if (faceRes.faceLandmarks?.length) {
+  const lm = faceRes.faceLandmarks[0];
+  headMaskPath = buildHeadMaskPath(lm, headX, headY, faceWidthPx, faceHeightPx);
 }
 
 // --- get index fingertip (screen) ---
@@ -503,12 +554,14 @@ function drawToken(d: { p: Particle; x: number; y: number; depth: number }) {
   const isVeil = d.p.kind === "veil";
   const t = (d.depth + 1) / 2;
 
-  const scale = isVeil ? (1.00 + 0.15 * t) : (0.75 + 0.55 * t);
+  const scale = isVeil
+    ? (1.00 + 0.10 * t)
+    : (0.65 + 0.75 * t);
 
   const veilFade = Math.pow(1 - d.p.u, 0.9);
   const alpha = isVeil
     ? (0.20 + 0.85 * veilFade)
-    : (0.20 + 0.80 * t); // orbit 不要太淡，保证立体感
+    : (0.10 + 0.90 * t);
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -522,17 +575,37 @@ function drawToken(d: { p: Particle; x: number; y: number; depth: number }) {
 
 // ---------- Layer A: orbit BEHIND + head occlusion ----------
 ctx.save();
-ctx.beginPath();
-ctx.rect(0, 0, window.innerWidth, window.innerHeight);
-ctx.ellipse(headX, headY, headRx, headRy, 0, 0, Math.PI * 2);
-ctx.clip("evenodd"); // 只允许画在“头部之外”（头部区域被挖掉）
+
+const outside = new Path2D();
+outside.rect(0, 0, window.innerWidth, window.innerHeight);
+
+if (headMaskPath) {
+  outside.addPath(headMaskPath);
+} else {
+  const fallback = new Path2D();
+  fallback.ellipse(headX, headY, headRx, headRy, 0, 0, Math.PI * 2);
+  outside.addPath(fallback);
+}
+
+// ✅ 只允许画在“屏幕矩形 - 头部遮罩”区域
+ctx.clip(outside, "evenodd");
 
 for (const d of drawable) {
   if (d.p.kind !== "orbit") continue;
   if (d.depth >= 0) continue; // 只画后半圈
   drawToken(d);
 }
+
 ctx.restore();
+
+if (headMaskPath) {
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = "rgba(0,255,0,0.9)";
+  ctx.lineWidth = 2;
+  ctx.stroke(headMaskPath);
+  ctx.restore();
+}
 
 // ---------- Layer B: veil ALWAYS FRONT (no clip) ----------
 for (const d of drawable) {
