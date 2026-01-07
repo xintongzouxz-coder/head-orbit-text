@@ -180,6 +180,8 @@ type Particle = {
 let nextId = 1;
 let orbitCounter = 0;
 
+let lastCommittedText = "";
+
 // ✅ 分开存
 const orbitParticles: Particle[] = [];
 const veilParticles: Particle[] = [];
@@ -189,6 +191,8 @@ function clearAll() {
   veilParticles.length = 0;
   nextId = 1;
   orbitCounter = 0;
+
+  lastCommittedText = ""; // ✅ 新增
 }
 const ORBIT_MAX_LANES = 12; // orbit 最多 8 圈（可调 6~10）
 const ORBIT = {
@@ -247,9 +251,36 @@ function enforceCaps() {
   orbitParticles.splice(0, Math.min(excess, orbitParticles.length));
 }
 
-function tokenizeGrapheme(text: string) {
-  const seg = new Intl.Segmenter("und", { granularity: "grapheme" });
-  return Array.from(seg.segment(text)).map(s => s.segment).filter(t => t.trim().length > 0);
+function tokenizeMixed(text: string) {
+  const wordSeg = new Intl.Segmenter("en", { granularity: "word" });
+  const graphemeSeg = new Intl.Segmenter("und", { granularity: "grapheme" });
+
+  const out: string[] = [];
+
+  for (const seg of wordSeg.segment(text)) {
+    const s = seg.segment;
+
+    // 过滤纯空白
+    if (!s.trim()) continue;
+
+    // 如果是“像单词”的英文片段：整词保留
+    const isSimpleEnglishWord =
+      (seg as any).isWordLike &&
+      /^[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*$/.test(s);
+
+    if (isSimpleEnglishWord) {
+      out.push(s);
+      continue;
+    }
+
+    // 其他情况（中文、emoji、混合、标点等）用 grapheme 保持细粒度
+    for (const g of graphemeSeg.segment(s)) {
+      const t = g.segment;
+      if (t.trim()) out.push(t);
+    }
+  }
+
+  return out;
 }
 
 function randomEntryColor() {
@@ -258,7 +289,7 @@ function randomEntryColor() {
 }
 
 function enqueueTokens(text: string) {
-  const tokens = tokenizeGrapheme(text);
+  const tokens = tokenizeMixed(text);
   const now = performance.now();
   const entryColor = randomEntryColor();
 
@@ -761,15 +792,16 @@ draw();
 // UX: autofocus input
 setTimeout(() => thoughtInput.focus(), 300);
 
-function commitThought(raw: string) {
+function commitThought(raw: string, remember = true) {
   const text = raw.trim();
   if (!text) return;
+
+  if (remember) lastCommittedText = text;
 
   console.log("COMMIT:", text);
 
   try {
     enqueueTokens(text);
-    thoughtInput.value = "";
   } catch (err) {
     console.error("enqueueTokens failed:", err);
   }
@@ -777,9 +809,18 @@ function commitThought(raw: string) {
 
 thoughtInput.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
+  if (e.repeat) return; // ✅ 防止按住 Enter 连发（你想连发可以删掉这行）
 
   e.preventDefault();
-  commitThought(thoughtInput.value);
+
+  const current = thoughtInput.value.trim();
+
+  if (current) {
+    commitThought(current, true);
+    thoughtInput.value = "";
+  } else if (lastCommittedText) {
+    commitThought(lastCommittedText, false); // ✅ 不覆盖 lastCommittedText
+  }
 });
 
 clearBtn.addEventListener("click", () => {
