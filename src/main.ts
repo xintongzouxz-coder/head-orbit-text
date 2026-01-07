@@ -178,13 +178,17 @@ type Particle = {
 };
 
 let nextId = 1;
-let orbitCounter = 0; // ✅ 只统计 orbit，不统计 veil
-const particles: Particle[] = [];
+let orbitCounter = 0;
+
+// ✅ 分开存
+const orbitParticles: Particle[] = [];
+const veilParticles: Particle[] = [];
 
 function clearAll() {
-  particles.length = 0; // 清空数组
-  nextId = 1;           // 可选：重置 id（更干净）
-  orbitCounter = 0; // ✅ 加这行
+  orbitParticles.length = 0;
+  veilParticles.length = 0;
+  nextId = 1;
+  orbitCounter = 0;
 }
 const ORBIT_MAX_LANES = 12; // orbit 最多 8 圈（可调 6~10）
 const ORBIT = {
@@ -204,9 +208,44 @@ const ORBIT = {
   // ellipse shape
   ellipseYScale: 0.92,
 
-  veilPush: 2.4,      // 推开强度（越大越“拨开”）
-  veilReturnTau: 1.1, // 回流时间（秒，越大回得越慢）
+  veilPush: 220,      // 推开强度（越大越“拨开”）
+  veilReturnTau: 2.4, // 回流时间（秒，越大回得越慢）
+
+  veilDriftAmp: 0.09,   // ✅ veil 内部漂移幅度（0.03~0.09 调）
+veilDriftFreq: 1.4,   // ✅ 漂移频率倍率（跟 speed 一起生效）
+
 };
+
+function enforceCaps() {
+  // 你原来的总上限
+  const MAX_TOTAL = ORBIT.maxParticles;
+
+  // orbit 的“预算”：最多保留这么多（避免无限增长）
+  const orbitSlots = ORBIT.laneCapacity * ORBIT_MAX_LANES;
+  const MAX_ORBITS = orbitSlots;
+
+  // 1) 先限制 orbit 自身不要无限长
+  if (orbitParticles.length > MAX_ORBITS) {
+    orbitParticles.splice(0, orbitParticles.length - MAX_ORBITS);
+  }
+
+  // 2) 再限制总量：超了先砍 veil
+  let total = orbitParticles.length + veilParticles.length;
+  if (total <= MAX_TOTAL) return;
+
+  let excess = total - MAX_TOTAL;
+
+  // ✅ 先砍 veil（关键）
+  if (veilParticles.length >= excess) {
+    veilParticles.splice(0, excess);
+    return;
+  }
+
+  // 如果 veil 不够砍，再砍 orbit（一般不会发生）
+  excess -= veilParticles.length;
+  veilParticles.length = 0;
+  orbitParticles.splice(0, Math.min(excess, orbitParticles.length));
+}
 
 function tokenizeGrapheme(text: string) {
   const seg = new Intl.Segmenter("und", { granularity: "grapheme" });
@@ -234,7 +273,7 @@ function enqueueTokens(text: string) {
       (idxInLane / ORBIT.laneCapacity) * Math.PI * 2 +
       (Math.random() - 0.5) * 0.08;
 
-    particles.push({
+    orbitParticles.push({
       id: nextId++,
       token: t,
       color: entryColor,
@@ -273,7 +312,7 @@ function enqueueTokens(text: string) {
   // ✅ u 建议先直接等于 r（和位置一致，alpha 才自然）
   const u = r;
 
-  particles.push({
+  veilParticles.push({
     id: nextId++,
     token: t,
     color: entryColor,
@@ -291,22 +330,60 @@ function enqueueTokens(text: string) {
     lane: 0,
     radiusOffset: 0,
     omegaOffset: 0,
-    omegaBase: 0.15,
+    omegaBase: 0.45,
     bornAt: now,
   });
 }
   }
 
   // cap（可保留）
-  if (particles.length > ORBIT.maxParticles) {
-    particles.splice(0, particles.length - ORBIT.maxParticles);
-  }
+ enforceCaps();
 }
 
 function expDecay(value: number, dt: number, tau: number) {
   // dt in seconds
   const k = Math.exp(-dt / Math.max(0.0001, tau));
   return value * k;
+}
+
+function buildHeadMaskPts(
+  lm: { x: number; y: number }[],
+  headX: number,
+  headY: number,
+  faceHeightPx: number
+) {
+  const inflateX = 1.18;
+  const inflateY = 1.45;
+  const hairLift = -faceHeightPx * 0.10;
+
+  const center = getFaceCenter(lm);
+  const c = mapNormToScreen(center.x, center.y);
+
+  const pts: { x: number; y: number }[] = [];
+
+  for (const idx of FACE_OVAL) {
+    const p = mapNormToScreen(lm[idx].x, lm[idx].y);
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+
+    pts.push({
+      x: headX + dx * inflateX,
+      y: headY + dy * inflateY + hairLift,
+    });
+  }
+
+  return pts;
+}
+
+function boundsOfPts(pts: { x: number; y: number }[]) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
 }
 
 function mapNormToScreen(nx: number, ny: number) {
@@ -454,6 +531,15 @@ headY = headY + (targetY - headY) * smooth;
   faceHeightPx = Math.max(200, Math.min(520, faceHeightPx));
 }
 
+let headMaskPts: { x: number; y: number }[] | null = null;
+let headBounds: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+
+if (faceRes.faceLandmarks?.length) {
+  const lm = faceRes.faceLandmarks[0];
+  headMaskPts = buildHeadMaskPts(lm, headX, headY, faceHeightPx);
+  headBounds = boundsOfPts(headMaskPts);
+}
+
 let headMaskPath: Path2D | null = null;
 if (faceRes.faceLandmarks?.length) {
   const lm = faceRes.faceLandmarks[0];
@@ -476,9 +562,16 @@ const baseR = faceWidthPx * (ORBIT.baseRScale ?? 0.55);
 // ✅ 先算 headRx/headRy（后面 drawable 要用）
 const headRx = faceWidthPx * 0.60;  // 原 0.55
 const headRy = faceHeightPx * 0.68; // 原 0.62
-const veilRx = headRx * 1.15;  // ✅ 放大 15%
-const veilRy = headRy * 1.35;  // ✅ 放大 35%，优先遮住眼睛方向
-const drawable = particles.map((p) => {
+const veilRx = headBounds
+  ? ((headBounds.maxX - headBounds.minX) * 0.5) * 1.01
+  : headRx * 1.08;
+
+const veilRy = headBounds
+  ? ((headBounds.maxY - headBounds.minY) * 0.5) * 1.01
+  : headRy * 1.12;
+const allParticles = orbitParticles.concat(veilParticles);
+
+const drawable = allParticles.map((p) => {
   let x = headX;
   let y = headY;
 
@@ -489,11 +582,21 @@ const drawable = particles.map((p) => {
     x = headX + a * Math.cos(p.theta);
     y = headY + b * Math.sin(p.theta);
   } else {
-    // ✅ veil：直接用内部采样点铺满椭圆
+  // ✅ veil：顺时针持续旋转（由 p.theta 驱动，speed slider 会影响 p.theta）
+  const phi = p.theta; // 方向反了就改成 -p.theta
+  const c = Math.cos(phi);
+  const s = Math.sin(phi);
 
+  // 用“当前被交互影响后的局部坐标”来旋转（关键）
+  const vx = p.vx;
+  const vy = Math.max(-0.95, Math.min(0.95, p.vy)); // clamp 生效
 
-x = headX + veilRx * p.vx;
-y = headY + veilRy * p.vy + (p.biasY * veilRy * 0.25);
+  // 前向旋转：局部(vx,vy) -> 旋转后的(rvx,rvy)
+  const rvx = vx * c - vy * s;
+  const rvy = vx * s + vy * c;
+
+  x = headX + veilRx * rvx;
+  y = headY + veilRy * rvy + (p.biasY * veilRy * 0.12);
   }
 
   const depth = Math.sin(p.theta);
@@ -511,19 +614,32 @@ if (finger) {
       const t = 1 - dist / ORBIT.influenceRadius;
 
       if (d.p.kind === "veil") {
-        // ✅ veil：推开 vx/vy（更像拨云）
-        const nx = dx / (dist + 1e-6);
-        const ny = dy / (dist + 1e-6);
+  const nx = dx / (dist + 1e-6);
+  const ny = dy / (dist + 1e-6);
 
-        // 这里把屏幕推力映射到 vx/vy 空间（用 face 尺寸归一化）
-        const push = ORBIT.veilPush * t * dt;
-        d.p.vx += (nx * push) / 0.8;
-        d.p.vy += (ny * push) / 0.8;
+  // push in screen space (CSS px)
+  const pushPx = ORBIT.veilPush * t * dt;
 
-        // 限制范围，避免飞出椭圆太远
-        d.p.vx = Math.max(-1.4, Math.min(1.4, d.p.vx));
-        d.p.vy = Math.max(-1.4, Math.min(1.4, d.p.vy));
-      } else {
+  // ✅ 关键：把“屏幕推力”转成“veil局部(vx/vy)推力”
+  const phi = d.p.theta; // 与你 draw 里用的旋转角保持一致
+  const c = Math.cos(phi);
+  const s = Math.sin(phi);
+
+  // 屏幕位移 -> 归一化到椭圆坐标
+  const lx = (nx * pushPx) / (veilRx + 1e-6);
+  const ly = (ny * pushPx) / (veilRy + 1e-6);
+
+  // 逆旋转（rotation matrix transpose）
+  const dvx = c * lx + s * ly;
+  const dvy = -s * lx + c * ly;
+
+  d.p.vx += dvx;
+  d.p.vy += dvy;
+
+  // ✅ 限制范围，避免飞太远（建议更紧一点）
+  d.p.vx = Math.max(-1.2, Math.min(1.2, d.p.vx));
+  d.p.vy = Math.max(-0.95, Math.min(0.95, d.p.vy));
+} else {
         // ✅ orbit：保持你原来的推开逻辑
         d.p.radiusOffset += ORBIT.repelStrength * t * dt;
         d.p.omegaOffset += ORBIT.swirlStrength * t * dt;
@@ -541,9 +657,28 @@ for (const d of drawable) {
   const omega = (p.omegaBase * settings.speedMultiplier) + p.omegaOffset;
   p.theta += omega * dt;
   if (p.kind === "veil") {
+  // ✅ speed 会影响 p.theta（你上面 omega 里已经 * settings.speedMultiplier 了）
+  // 所以只要 drift 用 theta，就天然被 speed 控制
+  const phase = p.theta * (ORBIT.veilDriftFreq ?? 1);
+
+  // ✅ 越靠外圈(u 越大)漂移稍微更明显一点（你也可以反过来）
+  const amp = (ORBIT.veilDriftAmp ?? 0.06) * (0.35 + 0.65 * p.u);
+
+  // ✅ 用 id 做去同步，避免所有字一起晃
+  const j = p.id * 0.37;
+
+  // ✅ “移动的原位”目标点（一直在缓慢漂）
+  const targetVx = p.vx0 + amp * Math.cos(phase + j);
+  const targetVy = p.vy0 + amp * Math.sin(phase * 0.9 + j);
+
+  // ✅ 强回弹：但回弹到 target，而不是静止的 vx0/vy0
   const k = Math.exp(-dt / ORBIT.veilReturnTau);
-  p.vx = p.vx0 + (p.vx - p.vx0) * k;
-  p.vy = p.vy0 + (p.vy - p.vy0) * k;
+  p.vx = targetVx + (p.vx - targetVx) * k;
+  p.vy = targetVy + (p.vy - targetVy) * k;
+
+  // ✅ 可选：防止漂出太多（建议先留着）
+  p.vx = Math.max(-1.4, Math.min(1.4, p.vx));
+  p.vy = Math.max(-1.4, Math.min(1.4, p.vy));
 }
 }
 
@@ -597,15 +732,6 @@ for (const d of drawable) {
 }
 
 ctx.restore();
-
-if (headMaskPath) {
-  ctx.save();
-  ctx.globalAlpha = 0.6;
-  ctx.strokeStyle = "rgba(0,255,0,0.9)";
-  ctx.lineWidth = 2;
-  ctx.stroke(headMaskPath);
-  ctx.restore();
-}
 
 // ---------- Layer B: veil ALWAYS FRONT (no clip) ----------
 for (const d of drawable) {
