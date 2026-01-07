@@ -253,38 +253,40 @@ function enqueueTokens(text: string) {
     const veilCopies = 2 + Math.floor(6 * density);  // 2..8（可调）
 
     for (let k = 0; k < veilCopies; k++) {
-      // 椭圆内部均匀采样
-      const r = Math.sqrt(Math.random());
-      const ang = Math.random() * Math.PI * 2;
-      const vx = r * Math.cos(ang);
-      const vy = r * Math.sin(ang);
+  // ✅ 每个 veil 粒子自己的 y 偏移
+  const biasY = -0.65 + Math.random() * 0.35;
 
-      // ✅ 外圈更稀：字越多 exponent 越大 -> 越集中中心
-      const uExp = 1.2 + 2.2 * density; // 1.2..3.4
-      const u = 0.05 + 0.95 * Math.pow(Math.random(), uExp);
+  // ✅ 椭圆内部均匀采样（覆盖脸用这个最稳）
+  const r = Math.sqrt(Math.random());
+  const ang = Math.random() * Math.PI * 2;
+  const vx = r * Math.cos(ang);
+  const vy = r * Math.sin(ang);
 
-      particles.push({
-        id: nextId++,
-        token: t,
-        color: entryColor,
+  // ✅ u 建议先直接等于 r（和位置一致，alpha 才自然）
+  const u = r;
 
-        kind: "veil",
-        u,
-        biasY: -0.65 + Math.random() * 0.35,
+  particles.push({
+    id: nextId++,
+    token: t,
+    color: entryColor,
 
-        vx,
-        vy,
-        vx0: vx,
-        vy0: vy,
+    kind: "veil",
+    u,
+    biasY,
 
-        theta: Math.random() * Math.PI * 2,
-        lane: 0,
-        radiusOffset: 0,
-        omegaOffset: 0,
-        omegaBase: 0.15,
-        bornAt: now,
-      });
-    }
+    vx,
+    vy,
+    vx0: vx,
+    vy0: vy,
+
+    theta: Math.random() * Math.PI * 2,
+    lane: 0,
+    radiusOffset: 0,
+    omegaOffset: 0,
+    omegaBase: 0.15,
+    bornAt: now,
+  });
+}
   }
 
   // cap（可保留）
@@ -437,11 +439,10 @@ const drawable = particles.map((p) => {
     y = headY + b * Math.sin(p.theta);
   } else {
     // ✅ veil：直接用内部采样点铺满椭圆
-const a = veilRx * (0.15 + 0.95 * p.u);
-const b = veilRy * (0.15 + 0.95 * p.u);
 
-x = headX + a * p.vx;
-y = headY + b * p.vy + (p.biasY * veilRy * 0.25);
+
+x = headX + veilRx * p.vx;
+y = headY + veilRy * p.vy + (p.biasY * veilRy * 0.25);
   }
 
   const depth = Math.sin(p.theta);
@@ -566,11 +567,13 @@ function commitThought(raw: string) {
   if (!text) return;
 
   console.log("COMMIT:", text);
-enqueueTokens(text);
-  // TODO (next step): turn this text into orbit particles
-  // e.g. enqueueTokens(text)
 
-  thoughtInput.value = "";
+  try {
+    enqueueTokens(text);
+    thoughtInput.value = "";
+  } catch (err) {
+    console.error("enqueueTokens failed:", err);
+  }
 }
 
 thoughtInput.addEventListener("keydown", (e) => {
