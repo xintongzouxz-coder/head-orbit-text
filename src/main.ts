@@ -119,11 +119,19 @@ function drawDot(x: number, y: number, r = 8) {
 type Particle = {
   id: number;
   token: string;
-  theta: number;        // angle
-  lane: number;         // ring index
-  radiusOffset: number; // pushed out by brush, decays back to 0
-  omegaOffset: number;  // temporary angular velocity offset, decays back to 0
-  omegaBase: number;    // base angular speed (rad/s)
+
+  kind: "orbit" | "veil";
+  u: number;
+  biasY: number;
+
+  vx: number;   // ✅ 新增
+  vy: number;   // ✅ 新增
+
+  theta: number;
+  lane: number;
+  radiusOffset: number;
+  omegaOffset: number;
+  omegaBase: number;
   bornAt: number;
 };
 
@@ -131,8 +139,8 @@ let nextId = 1;
 const particles: Particle[] = [];
 
 const ORBIT = {
-  laneGap: 14,
-  laneCapacity: 40,
+  laneGap: 18,
+  laneCapacity: 16,
   maxParticles: 600,
 
   // brush
@@ -144,7 +152,7 @@ const ORBIT = {
   tauOmega: 0.9,
 
   // ellipse shape
-  ellipseYScale: 0.72,
+  ellipseYScale: 0.92,
 };
 
 function tokenizeGrapheme(text: string) {
@@ -156,23 +164,34 @@ function enqueueTokens(text: string) {
   const tokens = tokenizeGrapheme(text);
   const now = performance.now();
 
-  for (const t of tokens) {
-    const i = particles.length;
-    const lane = Math.floor(i / ORBIT.laneCapacity);
+ for (const t of tokens) {
+  const i = particles.length;
+  const lane = Math.floor(i / ORBIT.laneCapacity);
 
-    particles.push({
-      id: nextId++,
-      token: t,
-      theta: Math.random() * Math.PI * 2,
-      lane,
-      radiusOffset: 0,
-      omegaOffset: 0,
-      omegaBase: 0.9 + lane * 0.10,
-      bornAt: now,
-    });
-  }
+  // ✅ 当字多了以后，更多字进入“盖脸层”
+  const density = Math.min(1, particles.length / 120); // 0..1
+  const toVeil = Math.random() < (0.15 + 0.75 * density); // 早期少，后期多
 
-  // cap list
+  const idxInLane = i % ORBIT.laneCapacity;
+  const theta0 =
+    (idxInLane / ORBIT.laneCapacity) * Math.PI * 2 +
+    (Math.random() - 0.5) * 0.08;
+
+  particles.push({
+  id: nextId++,
+  token: t,
+  kind: toVeil ? "veil" : "orbit",
+  u: Math.pow(Math.random(), 0.65),
+  biasY: toVeil ? (-0.85 + Math.random() * 0.35) : 0,
+  theta: theta0,
+  lane,
+  radiusOffset: 0,
+  omegaOffset: 0,
+  omegaBase: 0.9,
+  bornAt: now,
+});
+}
+
   if (particles.length > ORBIT.maxParticles) {
     particles.splice(0, particles.length - ORBIT.maxParticles);
   }
@@ -225,6 +244,8 @@ window.addEventListener("resize", resizeCanvas);
 let headX = window.innerWidth * 0.5;
 let headY = window.innerHeight * 0.45;
 
+let lastT = performance.now();
+
 // --- Temporary render loop (shows settings are live) ---
 function draw() {
   // 用 CSS 像素绘制（因为你前面 setTransform(dpr,...) 了）
@@ -253,11 +274,16 @@ if (faceRes.faceLandmarks?.length) {
   const lm = faceRes.faceLandmarks[0];
   // ✅ 用脸中心更新 headX/headY（全局变量）
   const center = getFaceCenter(lm);
-  const c = mapNormToScreen(center.x, center.y);
+const c = mapNormToScreen(center.x, center.y);
 
-  const smooth = 0.35;
-  headX = headX + (c.x - headX) * smooth;
-  headY = headY + (c.y - headY) * smooth;
+// ✅ 关键：把锚点从“脸中心”抬到“头部中心”
+const headOffsetY = -faceHeightPx * 0.18; // 可调：-0.12 ~ -0.28
+const targetX = c.x;
+const targetY = c.y + headOffsetY;
+
+const smooth = 0.35;
+headX = headX + (targetX - headX) * smooth;
+headY = headY + (targetY - headY) * smooth;
   // bbox in normalized space
   let minX = 1, maxX = 0, minY = 1, maxY = 0;
   for (const p of lm) {
@@ -289,20 +315,36 @@ if (handRes.landmarks?.length) {
 }
 
 // --- update + draw orbit particles ---
-const dt = 1 / 60; // 简化：先固定帧步长，后续我们再用真实 dt
+const dt = Math.min(0.05, (now - lastT) / 1000);
+lastT = now;
+
 const baseR = faceWidthPx * 0.55;
 
-// 先算每个粒子的位置与 depth，再排序绘制
-const drawable = particles.map(p => {
-  const laneR = baseR + p.lane * ORBIT.laneGap + p.radiusOffset;
-  const a = laneR;
-  const b = laneR * ORBIT.ellipseYScale;
+// ✅ 先算 headRx/headRy（后面 drawable 要用）
+const headRx = faceWidthPx * 0.55;
+const headRy = faceHeightPx * 0.62;
 
-  const x = headX + a * Math.cos(p.theta);
-  const y = headY + b * Math.sin(p.theta);
+const drawable = particles.map((p) => {
+  let x = headX;
+  let y = headY;
 
-  const depth = Math.sin(p.theta); // -1 back, +1 front
-  return { p, x, y, depth, a, b };
+  if (p.kind === "orbit") {
+    const laneR = baseR + p.lane * ORBIT.laneGap + p.radiusOffset;
+    const a = laneR;
+    const b = laneR * ORBIT.ellipseYScale;
+    x = headX + a * Math.cos(p.theta);
+    y = headY + b * Math.sin(p.theta);
+  } else {
+    // ✅ veil：直接用内部采样点铺满椭圆
+const a = headRx * (0.15 + 0.95 * p.u); // 稍微别太靠中心
+const b = headRy * (0.15 + 0.95 * p.u);
+
+x = headX + a * p.vx;
+y = headY + b * p.vy + (p.biasY * headRy * 0.25);
+  }
+
+  const depth = Math.sin(p.theta);
+  return { p, x, y, depth };
 });
 
 // Brush interaction (repel + slight swirl)
@@ -314,21 +356,15 @@ if (finger) {
 
     if (dist < ORBIT.influenceRadius) {
       const t = 1 - dist / ORBIT.influenceRadius;
-
-      // push outward
       d.p.radiusOffset += ORBIT.repelStrength * t * dt;
-
-      // swirl a bit (always same direction for now)
       d.p.omegaOffset += ORBIT.swirlStrength * t * dt;
     }
   }
 }
 
-// Update angles + decay back to stable orbit
+// Update angles + decay
 for (const d of drawable) {
   const p = d.p;
-
-  // decay offsets
   p.radiusOffset = expDecay(p.radiusOffset, dt, ORBIT.tauRadius);
   p.omegaOffset = expDecay(p.omegaOffset, dt, ORBIT.tauOmega);
 
@@ -336,12 +372,7 @@ for (const d of drawable) {
   p.theta += omega * dt;
 }
 
-// Draw (back -> front)
 drawable.sort((a, b) => a.depth - b.depth);
-
-// 用脸的宽高估一个“头部遮罩椭圆”
-const headRx = faceWidthPx * 0.55;
-const headRy = faceHeightPx * 0.62;
 
 // ========== 1) 先画 BEHIND：depth < 0，但把“头部椭圆区域”挖掉 ==========
 // 思路：clip 一个“屏幕矩形 - 头部椭圆”的区域（evenodd），
@@ -352,11 +383,14 @@ ctx.ellipse(headX, headY, headRx, headRy, 0, 0, Math.PI * 2);
 ctx.clip("evenodd"); // 只允许画在“头部之外”
 
 for (const d of drawable) {
-  if (d.depth >= 0) continue;
+  if (d.depth >= 0) continue;        // ✅ 只画“在头后面”的
+  if (d.p.kind === "veil") continue;  // ✅ veil 不属于“头后面”，跳过
 
-  const t = (d.depth + 1) / 2;       // 0..1
-  const scale = 0.75 + 0.55 * t;
-  const alpha = 0.10 + 0.55 * t;     // behind 可更淡一点
+  const t = (d.depth + 1) / 2;
+
+  const isVeil = d.p.kind === "veil";
+  const scale = isVeil ? (0.95 + 0.25 * t) : (0.75 + 0.55 * t);
+  const alpha = isVeil ? (0.55 + 0.40 * t) : (0.15 + 0.85 * t);
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -371,7 +405,8 @@ ctx.restore();
 
 // ========== 2) 再画 FRONT：depth >= 0，正常画在头前 ==========
 for (const d of drawable) {
-  if (d.depth < 0) continue;
+  const isVeil = d.p.kind === "veil";
+  if (!isVeil && d.depth < 0) continue; // ✅ orbit 只画前半圈；veil 全都画
 
   const t = (d.depth + 1) / 2;
   const scale = 0.75 + 0.55 * t;
