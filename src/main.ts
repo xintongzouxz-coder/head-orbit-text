@@ -222,6 +222,8 @@ function resizeCanvas() {
 }
 window.addEventListener("resize", resizeCanvas);
 
+let headX = window.innerWidth * 0.5;
+let headY = window.innerHeight * 0.45;
 
 // --- Temporary render loop (shows settings are live) ---
 function draw() {
@@ -243,32 +245,40 @@ function draw() {
   const handRes = handLandmarker.detectForVideo(video, now);
 
   // --- get head center + face size (px) ---
-let headX = window.innerWidth * 0.5;
-let headY = window.innerHeight * 0.45;
+
 let faceWidthPx = 220;
+let faceHeightPx = 260;
 
 if (faceRes.faceLandmarks?.length) {
   const lm = faceRes.faceLandmarks[0];
-
-  // center
+  // ✅ 用脸中心更新 headX/headY（全局变量）
   const center = getFaceCenter(lm);
   const c = mapNormToScreen(center.x, center.y);
-  headX = c.x;
-  headY = c.y;
 
-  // face width from bbox (normalized -> px)
-  let minX = 1, maxX = 0;
-  for (const p of lm) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); }
+  const smooth = 0.35;
+  headX = headX + (c.x - headX) * smooth;
+  headY = headY + (c.y - headY) * smooth;
+  // bbox in normalized space
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (const p of lm) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
 
-  // cover scale (same as mapNormToScreen internal logic)
+  // cover scale (与 mapNormToScreen 保持一致)
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   const sw = window.innerWidth;
   const sh = window.innerHeight;
   const scale = Math.max(sw / vw, sh / vh);
 
-  faceWidthPx = (maxX - minX) * vw * scale;
-  faceWidthPx = Math.max(160, Math.min(420, faceWidthPx)); // clamp
+  faceWidthPx  = (maxX - minX) * vw * scale;
+  faceHeightPx = (maxY - minY) * vh * scale;
+
+  faceWidthPx  = Math.max(160, Math.min(460, faceWidthPx));
+  faceHeightPx = Math.max(200, Math.min(520, faceHeightPx));
 }
 
 // --- get index fingertip (screen) ---
@@ -329,9 +339,41 @@ for (const d of drawable) {
 // Draw (back -> front)
 drawable.sort((a, b) => a.depth - b.depth);
 
+// 用脸的宽高估一个“头部遮罩椭圆”
+const headRx = faceWidthPx * 0.55;
+const headRy = faceHeightPx * 0.62;
+
+// ========== 1) 先画 BEHIND：depth < 0，但把“头部椭圆区域”挖掉 ==========
+// 思路：clip 一个“屏幕矩形 - 头部椭圆”的区域（evenodd），
+ctx.save();
+ctx.beginPath();
+ctx.rect(0, 0, window.innerWidth, window.innerHeight);
+ctx.ellipse(headX, headY, headRx, headRy, 0, 0, Math.PI * 2);
+ctx.clip("evenodd"); // 只允许画在“头部之外”
+
 for (const d of drawable) {
-  const p = d.p;
-  const t = (d.depth + 1) / 2; // 0..1
+  if (d.depth >= 0) continue;
+
+  const t = (d.depth + 1) / 2;       // 0..1
+  const scale = 0.75 + 0.55 * t;
+  const alpha = 0.10 + 0.55 * t;     // behind 可更淡一点
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = `${Math.round(settings.fontSize * scale)}px system-ui`;
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(d.p.token, d.x, d.y);
+  ctx.restore();
+}
+ctx.restore();
+
+// ========== 2) 再画 FRONT：depth >= 0，正常画在头前 ==========
+for (const d of drawable) {
+  if (d.depth < 0) continue;
+
+  const t = (d.depth + 1) / 2;
   const scale = 0.75 + 0.55 * t;
   const alpha = 0.15 + 0.85 * t;
 
@@ -341,7 +383,7 @@ for (const d of drawable) {
   ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(p.token, d.x, d.y);
+  ctx.fillText(d.p.token, d.x, d.y);
   ctx.restore();
 }
 
@@ -353,27 +395,7 @@ if (finger) {
   drawDot(finger.x, finger.y, 5);
 }
 
-  // 画头部中心点（绿色）
-  if (faceRes.faceLandmarks?.length) {
-    const center = getFaceCenter(faceRes.faceLandmarks[0]);
 
-    const { x, y } = mapNormToScreen(center.x, center.y);
-
-    ctx.fillStyle = "rgba(0,255,0,0.9)";
-    drawDot(x, y, 10);
-  }
-
-  // 画食指指尖（红色，landmark 8）
-  if (handRes.landmarks?.length) {
-    for (const oneHand of handRes.landmarks) {
-      const tip = oneHand[8];
-      const { x, y } = mapNormToScreen(tip.x, tip.y);
-    
-
-      ctx.fillStyle = "rgba(255,0,0,0.9)";
-      drawDot(x, y, 8);
-    }
-  }
 
   requestAnimationFrame(draw);
 }
