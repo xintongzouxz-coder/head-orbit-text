@@ -22,6 +22,7 @@ const speedSlider = document.querySelector<HTMLInputElement>("#speed")!;
 const fontSizeValue = document.querySelector<HTMLSpanElement>("#fontSizeValue")!;
 const speedValue = document.querySelector<HTMLSpanElement>("#speedValue")!;
 const thoughtInput = document.querySelector<HTMLInputElement>("#thought")!;
+const clearBtn = document.querySelector<HTMLButtonElement>("#clear")!;
 
 // --- UI: panel toggle ---
 function setPanelOpen(open: boolean) {
@@ -138,6 +139,11 @@ type Particle = {
 
 let nextId = 1;
 const particles: Particle[] = [];
+
+function clearAll() {
+  particles.length = 0; // 清空数组
+  nextId = 1;           // 可选：重置 id（更干净）
+}
 
 const ORBIT = {
   laneGap: 18,
@@ -514,4 +520,10 @@ thoughtInput.addEventListener("keydown", (e) => {
 
   e.preventDefault();
   commitThought(thoughtInput.value);
+});
+
+clearBtn.addEventListener("click", () => {
+  clearAll();
+  thoughtInput.value = "";
+  thoughtInput.focus();
 });
