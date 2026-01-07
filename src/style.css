@@ -230,3 +230,26 @@ html, body {
 
 /* 如果 gear 的字体太小，可以加这一行（可选） */
 #gear { font-size: 18px; }
+
+.panel__radio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  /* ✅ 每个选项自己占一整行 */
+  width: 100%;
+  margin-top: 8px;
+
+  /* ✅ 不要被挤到同一行 */
+  white-space: normal;
+}
+
+.panel__radio input[type="radio"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.panel__radio span {
+  display: block;       /* ✅ 强制 span 独占，避免奇怪的 inline 压缩 */
+  line-height: 1.2;
+}
