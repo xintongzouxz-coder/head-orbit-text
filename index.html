@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Head Orbit Text</title>
+  </head>
+  <body>
+    <video id="cam" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+
+    <button id="gear" aria-label="Settings" title="Settings">
+      ⚙︎
+    </button>
+
+    <div id="panel" class="panel panel--hidden" role="dialog" aria-label="Settings panel">
+      <div class="panel__row">
+        <div class="panel__label">Text size</div>
+        <div class="panel__value"><span id="fontSizeValue">28</span>px</div>
+      </div>
+      <input id="fontSize" type="range" min="10" max="64" step="1" value="28" />
+
+      <div class="panel__row" style="margin-top: 12px;">
+        <div class="panel__label">Orbit speed</div>
+        <div class="panel__value"><span id="speedValue">0.90</span>x</div>
+      </div>
+      <input id="speed" type="range" min="0.10" max="2.00" step="0.05" value="0.90" />
+    </div>
+
+    <div class="inputWrap">
+      <input
+        id="thought"
+        class="thoughtInput"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Type what’s on your mind…"
+      />
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

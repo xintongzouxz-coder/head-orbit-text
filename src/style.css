@@ -1,0 +1,111 @@
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+}
+
+#cam {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* mirror like selfie */
+  filter: contrast(1.05) saturate(1.05);
+}
+
+#fx {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Settings gear */
+#gear {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.35);
+  color: rgba(255,255,255,0.9);
+  font-size: 18px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+/* Panel */
+.panel {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  width: 240px;
+  padding: 12px 12px 14px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.42);
+  color: rgba(255,255,255,0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+
+.panel--hidden {
+  display: none;
+}
+
+.panel__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.panel__label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.panel__value {
+  font-size: 12px;
+  opacity: 0.95;
+}
+
+.panel input[type="range"] {
+  width: 100%;
+  margin-top: 6px;
+}
+
+/* Bottom input (immersive) */
+.inputWrap {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: rgba(0,0,0,0.22);
+  backdrop-filter: blur(10px);
+}
+
+.thoughtInput {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: rgba(255,255,255,0.92);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.thoughtInput::placeholder {
+  color: rgba(255,255,255,0.55);
+}
