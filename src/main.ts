@@ -483,12 +483,7 @@ for (const d of drawable) {
 }
 
 // 可选：暂时保留调试点（你确认OK后我们再关掉）
-ctx.fillStyle = "rgba(0,255,0,0.9)";
-drawDot(headX, headY, 6);
-if (finger) {
-  ctx.fillStyle = "rgba(255,0,0,0.9)";
-  drawDot(finger.x, finger.y, 5);
-}
+
 
 
 
