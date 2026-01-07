@@ -155,7 +155,7 @@ const ORBIT = {
   // ellipse shape
   ellipseYScale: 0.92,
 
-  veilPush: 1.2,      // 推开强度（越大越“拨开”）
+  veilPush: 2.4,      // 推开强度（越大越“拨开”）
   veilReturnTau: 1.1, // 回流时间（秒，越大回得越慢）
 };
 
