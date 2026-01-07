@@ -150,11 +150,6 @@ function getFaceCenter(faceLandmarks: { x: number; y: number }[]) {
   return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
 }
 
-function drawDot(x: number, y: number, r = 8) {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-}
 
 type Particle = {
   id: number;
@@ -446,7 +441,6 @@ function buildHeadMaskPath(
   lm: { x: number; y: number }[],
   headX: number,
   headY: number,
-  faceWidthPx: number,
   faceHeightPx: number
 ) {
   // 让遮罩比“脸”更像“头”（包含头发）
@@ -562,7 +556,6 @@ headY = headY + (targetY - headY) * smooth;
   faceHeightPx = Math.max(200, Math.min(520, faceHeightPx));
 }
 
-let headMaskPts: { x: number; y: number }[] | null = null;
 let headBounds: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
 
 if (faceRes.faceLandmarks?.length) {
@@ -574,7 +567,7 @@ if (faceRes.faceLandmarks?.length) {
 let headMaskPath: Path2D | null = null;
 if (faceRes.faceLandmarks?.length) {
   const lm = faceRes.faceLandmarks[0];
-  headMaskPath = buildHeadMaskPath(lm, headX, headY, faceWidthPx, faceHeightPx);
+  headMaskPath = buildHeadMaskPath(lm, headX, headY, faceHeightPx);
 }
 
 // --- get index fingertip (screen) ---
