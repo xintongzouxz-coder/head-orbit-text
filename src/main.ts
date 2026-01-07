@@ -126,7 +126,8 @@ type Particle = {
 
   vx: number;   // ✅ 新增
   vy: number;   // ✅ 新增
-
+  vx0: number; // ✅ 原位（初始位置）
+  vy0: number;
   theta: number;
   lane: number;
   radiusOffset: number;
@@ -153,6 +154,9 @@ const ORBIT = {
 
   // ellipse shape
   ellipseYScale: 0.92,
+
+  veilPush: 1.2,      // 推开强度（越大越“拨开”）
+  veilReturnTau: 1.1, // 回流时间（秒，越大回得越慢）
 };
 
 function tokenizeGrapheme(text: string) {
@@ -210,6 +214,8 @@ function enqueueTokens(text: string) {
         biasY: -0.65 + Math.random() * 0.35, // 偏上：更像挡视线
         vx,
         vy,
+        vx0: vx,
+        vy0: vy,
         theta: Math.random() * Math.PI * 2, // veil 自己也有 theta（用于轻微动态）
         lane: 0,
         radiusOffset: 0,
@@ -386,8 +392,25 @@ if (finger) {
 
     if (dist < ORBIT.influenceRadius) {
       const t = 1 - dist / ORBIT.influenceRadius;
-      d.p.radiusOffset += ORBIT.repelStrength * t * dt;
-      d.p.omegaOffset += ORBIT.swirlStrength * t * dt;
+
+      if (d.p.kind === "veil") {
+        // ✅ veil：推开 vx/vy（更像拨云）
+        const nx = dx / (dist + 1e-6);
+        const ny = dy / (dist + 1e-6);
+
+        // 这里把屏幕推力映射到 vx/vy 空间（用 face 尺寸归一化）
+        const push = ORBIT.veilPush * t * dt;
+        d.p.vx += (nx * push) / 0.8;
+        d.p.vy += (ny * push) / 0.8;
+
+        // 限制范围，避免飞出椭圆太远
+        d.p.vx = Math.max(-1.4, Math.min(1.4, d.p.vx));
+        d.p.vy = Math.max(-1.4, Math.min(1.4, d.p.vy));
+      } else {
+        // ✅ orbit：保持你原来的推开逻辑
+        d.p.radiusOffset += ORBIT.repelStrength * t * dt;
+        d.p.omegaOffset += ORBIT.swirlStrength * t * dt;
+      }
     }
   }
 }
@@ -400,6 +423,11 @@ for (const d of drawable) {
 
   const omega = (p.omegaBase * settings.speedMultiplier) + p.omegaOffset;
   p.theta += omega * dt;
+  if (p.kind === "veil") {
+  const k = Math.exp(-dt / ORBIT.veilReturnTau);
+  p.vx = p.vx0 + (p.vx - p.vx0) * k;
+  p.vy = p.vy0 + (p.vy - p.vy0) * k;
+}
 }
 
 drawable.sort((a, b) => a.depth - b.depth);
