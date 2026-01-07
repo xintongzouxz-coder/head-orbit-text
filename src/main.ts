@@ -1,3 +1,4 @@
+import { FilesetResolver, FaceLandmarker, HandLandmarker } from "@mediapipe/tasks-vision";
 import "./style.css";
 
 type Settings = {
@@ -61,10 +62,151 @@ async function startCamera() {
     });
     video.srcObject = stream;
     await video.play();
+
+    await initVision();
   } catch (err) {
     console.warn("Camera permission denied or unavailable:", err);
-    // Minimal non-intrusive hint in console for MVP; we'll add UI later.
   }
+}
+let faceLandmarker: FaceLandmarker | null = null;
+let handLandmarker: HandLandmarker | null = null;
+
+async function initVision() {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+  );
+
+  faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numFaces: 1,
+  });
+
+  handLandmarker = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numHands: 2,
+  });
+
+  console.log("Vision ready");
+}
+
+function getFaceCenter(faceLandmarks: { x: number; y: number }[]) {
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  for (const p of faceLandmarks) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
+function drawDot(x: number, y: number, r = 8) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+type Particle = {
+  id: number;
+  token: string;
+  theta: number;        // angle
+  lane: number;         // ring index
+  radiusOffset: number; // pushed out by brush, decays back to 0
+  omegaOffset: number;  // temporary angular velocity offset, decays back to 0
+  omegaBase: number;    // base angular speed (rad/s)
+  bornAt: number;
+};
+
+let nextId = 1;
+const particles: Particle[] = [];
+
+const ORBIT = {
+  laneGap: 14,
+  laneCapacity: 40,
+  maxParticles: 600,
+
+  // brush
+  influenceRadius: 90,
+  repelStrength: 140,   // px/s^2-ish (we apply per frame)
+  swirlStrength: 3.2,   // rad/s
+  // decay (seconds)
+  tauRadius: 1.2,
+  tauOmega: 0.9,
+
+  // ellipse shape
+  ellipseYScale: 0.72,
+};
+
+function tokenizeGrapheme(text: string) {
+  const seg = new Intl.Segmenter("und", { granularity: "grapheme" });
+  return Array.from(seg.segment(text)).map(s => s.segment).filter(t => t.trim().length > 0);
+}
+
+function enqueueTokens(text: string) {
+  const tokens = tokenizeGrapheme(text);
+  const now = performance.now();
+
+  for (const t of tokens) {
+    const i = particles.length;
+    const lane = Math.floor(i / ORBIT.laneCapacity);
+
+    particles.push({
+      id: nextId++,
+      token: t,
+      theta: Math.random() * Math.PI * 2,
+      lane,
+      radiusOffset: 0,
+      omegaOffset: 0,
+      omegaBase: 0.9 + lane * 0.10,
+      bornAt: now,
+    });
+  }
+
+  // cap list
+  if (particles.length > ORBIT.maxParticles) {
+    particles.splice(0, particles.length - ORBIT.maxParticles);
+  }
+}
+
+function expDecay(value: number, dt: number, tau: number) {
+  // dt in seconds
+  const k = Math.exp(-dt / Math.max(0.0001, tau));
+  return value * k;
+}
+
+function mapNormToScreen(nx: number, ny: number) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const sw = window.innerWidth;
+  const sh = window.innerHeight;
+
+  // object-fit: cover 的缩放比例
+  const scale = Math.max(sw / vw, sh / vh);
+  const rw = vw * scale;
+  const rh = vh * scale;
+
+  // 居中裁切的偏移
+  const ox = (rw - sw) / 2;
+  const oy = (rh - sh) / 2;
+
+  // 先把视频像素映射到“被 cover 缩放后”的坐标，再减掉裁切偏移
+  let x = nx * vw * scale - ox;
+  const y = ny * vh * scale - oy;
+
+  // 因为视频做了 scaleX(-1) 镜像，这里把 x 镜像回来对齐
+  x = sw - x;
+
+  return { x, y };
 }
 
 // --- Canvas resize ---
@@ -80,15 +222,158 @@ function resizeCanvas() {
 }
 window.addEventListener("resize", resizeCanvas);
 
+
 // --- Temporary render loop (shows settings are live) ---
 function draw() {
+  // 用 CSS 像素绘制（因为你前面 setTransform(dpr,...) 了）
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
-  // Simple HUD to confirm real-time control works
-  ctx.font = `${settings.fontSize}px system-ui`;
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.fillText(`fontSize: ${settings.fontSize}px`, 20, 40);
-  ctx.fillText(`speed: ${settings.speedMultiplier.toFixed(2)}x`, 20, 40 + settings.fontSize);
+  // 如果 vision 还没准备好，就先显示一句提示
+  if (!faceLandmarker || !handLandmarker || video.readyState < 2) {
+    ctx.font = "16px system-ui";
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.fillText("Loading vision models…", 20, 30);
+    requestAnimationFrame(draw);
+    return;
+  }
+
+  const now = performance.now();
+
+  const faceRes = faceLandmarker.detectForVideo(video, now);
+  const handRes = handLandmarker.detectForVideo(video, now);
+
+  // --- get head center + face size (px) ---
+let headX = window.innerWidth * 0.5;
+let headY = window.innerHeight * 0.45;
+let faceWidthPx = 220;
+
+if (faceRes.faceLandmarks?.length) {
+  const lm = faceRes.faceLandmarks[0];
+
+  // center
+  const center = getFaceCenter(lm);
+  const c = mapNormToScreen(center.x, center.y);
+  headX = c.x;
+  headY = c.y;
+
+  // face width from bbox (normalized -> px)
+  let minX = 1, maxX = 0;
+  for (const p of lm) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); }
+
+  // cover scale (same as mapNormToScreen internal logic)
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const sw = window.innerWidth;
+  const sh = window.innerHeight;
+  const scale = Math.max(sw / vw, sh / vh);
+
+  faceWidthPx = (maxX - minX) * vw * scale;
+  faceWidthPx = Math.max(160, Math.min(420, faceWidthPx)); // clamp
+}
+
+// --- get index fingertip (screen) ---
+let finger: { x: number; y: number } | null = null;
+if (handRes.landmarks?.length) {
+  const tip = handRes.landmarks[0][8];
+  finger = mapNormToScreen(tip.x, tip.y);
+}
+
+// --- update + draw orbit particles ---
+const dt = 1 / 60; // 简化：先固定帧步长，后续我们再用真实 dt
+const baseR = faceWidthPx * 0.55;
+
+// 先算每个粒子的位置与 depth，再排序绘制
+const drawable = particles.map(p => {
+  const laneR = baseR + p.lane * ORBIT.laneGap + p.radiusOffset;
+  const a = laneR;
+  const b = laneR * ORBIT.ellipseYScale;
+
+  const x = headX + a * Math.cos(p.theta);
+  const y = headY + b * Math.sin(p.theta);
+
+  const depth = Math.sin(p.theta); // -1 back, +1 front
+  return { p, x, y, depth, a, b };
+});
+
+// Brush interaction (repel + slight swirl)
+if (finger) {
+  for (const d of drawable) {
+    const dx = d.x - finger.x;
+    const dy = d.y - finger.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < ORBIT.influenceRadius) {
+      const t = 1 - dist / ORBIT.influenceRadius;
+
+      // push outward
+      d.p.radiusOffset += ORBIT.repelStrength * t * dt;
+
+      // swirl a bit (always same direction for now)
+      d.p.omegaOffset += ORBIT.swirlStrength * t * dt;
+    }
+  }
+}
+
+// Update angles + decay back to stable orbit
+for (const d of drawable) {
+  const p = d.p;
+
+  // decay offsets
+  p.radiusOffset = expDecay(p.radiusOffset, dt, ORBIT.tauRadius);
+  p.omegaOffset = expDecay(p.omegaOffset, dt, ORBIT.tauOmega);
+
+  const omega = (p.omegaBase * settings.speedMultiplier) + p.omegaOffset;
+  p.theta += omega * dt;
+}
+
+// Draw (back -> front)
+drawable.sort((a, b) => a.depth - b.depth);
+
+for (const d of drawable) {
+  const p = d.p;
+  const t = (d.depth + 1) / 2; // 0..1
+  const scale = 0.75 + 0.55 * t;
+  const alpha = 0.15 + 0.85 * t;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = `${Math.round(settings.fontSize * scale)}px system-ui`;
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(p.token, d.x, d.y);
+  ctx.restore();
+}
+
+// 可选：暂时保留调试点（你确认OK后我们再关掉）
+ctx.fillStyle = "rgba(0,255,0,0.9)";
+drawDot(headX, headY, 6);
+if (finger) {
+  ctx.fillStyle = "rgba(255,0,0,0.9)";
+  drawDot(finger.x, finger.y, 5);
+}
+
+  // 画头部中心点（绿色）
+  if (faceRes.faceLandmarks?.length) {
+    const center = getFaceCenter(faceRes.faceLandmarks[0]);
+
+    const { x, y } = mapNormToScreen(center.x, center.y);
+
+    ctx.fillStyle = "rgba(0,255,0,0.9)";
+    drawDot(x, y, 10);
+  }
+
+  // 画食指指尖（红色，landmark 8）
+  if (handRes.landmarks?.length) {
+    for (const oneHand of handRes.landmarks) {
+      const tip = oneHand[8];
+      const { x, y } = mapNormToScreen(tip.x, tip.y);
+    
+
+      ctx.fillStyle = "rgba(255,0,0,0.9)";
+      drawDot(x, y, 8);
+    }
+  }
 
   requestAnimationFrame(draw);
 }
@@ -105,6 +390,7 @@ function commitThought(raw: string) {
   if (!text) return;
 
   console.log("COMMIT:", text);
+enqueueTokens(text);
   // TODO (next step): turn this text into orbit particles
   // e.g. enqueueTokens(text)
 
