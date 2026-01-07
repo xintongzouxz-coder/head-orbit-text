@@ -5,17 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Head Orbit Text</title>
   </head>
+
   <body>
     <video id="cam" autoplay playsinline muted></video>
     <canvas id="fx"></canvas>
+
     <div class="topActions">
-       <button id="clear" class="clearTop" data-tip="Clear up" aria-label="Clear all text">✕</button>
-    <button id="gear" data-tip="Settings" aria-label="Settings" title="Settings">
-      ⚙︎
-    </button>
+      <button id="clear" class="clearTop" data-tip="Clear up" aria-label="Clear all text">✕</button>
+      <button id="gear" data-tip="Settings" aria-label="Settings">⚙︎</button>
     </div>
-   
-    
 
     <div id="panel" class="panel panel--hidden" role="dialog" aria-label="Settings panel">
       <div class="panel__row">
@@ -29,19 +27,39 @@
         <div class="panel__value"><span id="speedValue">0.90</span>x</div>
       </div>
       <input id="speed" type="range" min="0.10" max="2.00" step="0.05" value="0.90" />
+
+      <!-- ✅ divider + colour section 必须在 panel 里面 -->
+      <hr class="panel__divider" />
+
+      <div class="panel__row" style="margin-top: 10px;">
+        <div class="panel__label">Text colour</div>
+      </div>
+
+      <label class="panel__radio">
+        <input id="modeGlobal" type="radio" name="colorMode" value="global" checked />
+        <span>Global colour</span>
+      </label>
+
+      <div id="globalColorRow" class="panel__row" style="margin-top: 8px;">
+        <input id="colorPicker" type="color" value="#ffffff" />
+      </div>
+
+      <label class="panel__radio" style="margin-top: 8px;">
+        <input id="modeRandom" type="radio" name="colorMode" value="random" />
+        <span>Random per entry</span>
+      </label>
     </div>
 
-   <div class="thoughtBar">
-  <input
-    id="thought"
-    class="thoughtInput"
-    type="text"
-    autocomplete="off"
-    spellcheck="false"
-    placeholder="Type what's on your mind..."
-  />
-
-</div>
+    <div class="thoughtBar">
+      <input
+        id="thought"
+        class="thoughtInput"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Type what's on your mind..."
+      />
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
