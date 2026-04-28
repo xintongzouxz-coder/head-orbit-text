@@ -113,7 +113,7 @@ let handLandmarker: HandLandmarker | null = null;
 
 async function initVision() {
   const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
   );
 
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
