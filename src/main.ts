@@ -93,6 +93,8 @@ colorPicker.addEventListener("input", () => {
 
 applyColorModeUI();
 
+let visionError: string | null = null;
+
 // --- Camera ---
 async function startCamera() {
   try {
@@ -102,10 +104,10 @@ async function startCamera() {
     });
     video.srcObject = stream;
     await video.play();
-
     await initVision();
   } catch (err) {
-    console.warn("Camera permission denied or unavailable:", err);
+    visionError = String(err);
+    console.error("Startup failed:", err);
   }
 }
 let faceLandmarker: FaceLandmarker | null = null;
@@ -113,7 +115,7 @@ let handLandmarker: HandLandmarker | null = null;
 
 async function initVision() {
   const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm"
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
 
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
@@ -503,8 +505,13 @@ function draw() {
   // 如果 vision 还没准备好，就先显示一句提示
  if (!faceLandmarker || !handLandmarker || video.readyState < 2) {
   ctx.font = "16px system-ui";
-  ctx.fillStyle = settings.globalColor; // ✅ 用全局色就行
-  ctx.fillText("Loading vision models…", 20, 30);
+  ctx.fillStyle = "#ff4444";
+  if (visionError) {
+    ctx.fillText("Error: " + visionError, 20, 30);
+  } else {
+    ctx.fillStyle = settings.globalColor;
+    ctx.fillText("Loading vision models…", 20, 30);
+  }
   requestAnimationFrame(draw);
   return;
 }
