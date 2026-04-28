@@ -119,7 +119,7 @@ async function initVision() {
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath:
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm/face_landmarker.task",
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/face_landmarker.task",
       delegate: "GPU",
     },
     runningMode: "VIDEO",
@@ -129,7 +129,7 @@ async function initVision() {
   handLandmarker = await HandLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath:
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm/hand_landmarker.task",
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/hand_landmarker.task",
       delegate: "GPU",
     },
     runningMode: "VIDEO",
