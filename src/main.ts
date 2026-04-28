@@ -113,13 +113,13 @@ let handLandmarker: HandLandmarker | null = null;
 
 async function initVision() {
   const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm"
   );
 
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath:
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/face_landmarker.task",
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
       delegate: "GPU",
     },
     runningMode: "VIDEO",
@@ -129,7 +129,7 @@ async function initVision() {
   handLandmarker = await HandLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath:
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/hand_landmarker.task",
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
       delegate: "GPU",
     },
     runningMode: "VIDEO",
